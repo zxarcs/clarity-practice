@@ -23,7 +23,7 @@ describe("Test Locking Funds", () => {
     expect(transferEvent.event).toBe("stx_transfer_event");
     expect(transferEvent.data.amount).toBe(amount.toString());
     expect(transferEvent.data.recipient).toBe(
-      deployer.concat(".timelocked-wallet")
+      `${simnet.deployer}.timelocked-wallet`
     );
     expect(transferEvent.data.sender).toBe(deployer);
 
@@ -87,7 +87,7 @@ describe("Test Locking Funds", () => {
       [Cl.principal(beneficiary), Cl.uint(num_blocks_to_lock), Cl.uint(amount)],
       deployer
     );
-    expect(lockTx.result).toBeOk(Cl.bool(true))
+    expect(lockTx.result).toBeOk(Cl.bool(true));
 
     // mine some blocks but not enough to unlock
     simnet.mineEmptyBlocks(20);
@@ -102,10 +102,10 @@ describe("Test Locking Funds", () => {
     );
 
     // expecting err-too-soon (err u105)
-    expect(claimTx.result).toBeErr(Cl.uint(105))
+    expect(claimTx.result).toBeErr(Cl.uint(105));
 
     // expecting no transfer events
-    expect(claimTx.events).toHaveLength(0)
+    expect(claimTx.events).toHaveLength(0);
   });
 
   it("amount must be greater than zero", () => {
@@ -121,37 +121,203 @@ describe("Test Locking Funds", () => {
     );
 
     // expecting err-zero-deposit (err u103)
-    expect(lockTx.result).toBeErr(Cl.uint(103))
+    expect(lockTx.result).toBeErr(Cl.uint(103));
 
     // expecting no transfer events
-    expect(lockTx.events).toHaveLength(0)
-
-  })
+    expect(lockTx.events).toHaveLength(0);
+  });
 });
 
-// Clarinet.test({
-//   name: "Unlock height cannot be in the past",
-//   async fn(chain: Chain, accounts: Map<string, Account>) {
-//     const deployer = accounts.get("deployer")!;
-//     const beneficiary = accounts.get("wallet_1")!;
-//     const targetBlockHeight = 10;
-//     const amount = 10;
+describe("Test Bestow Functionality", () => {
+  it("allows the beneficiary to bestow the right to claim to someone else", () => {
+    const deployer = accounts.get("deployer")!;
+    const beneficiary = accounts.get("wallet_1")!;
+    const new_beneficiary = accounts.get("wallet_2")!;
+    const amount = 10;
 
-//     // Advance the chain until the unlock height plus one.
-//     chain.mineEmptyBlockUntil(targetBlockHeight + 1);
+    const lockTx = simnet.callPublicFn(
+      "timelocked-wallet",
+      "lock",
+      [Cl.principal(beneficiary), Cl.uint(30), Cl.uint(amount)],
+      deployer
+    );
+    expect(lockTx.result).toBeOk(Cl.bool(true));
 
-//     const block = chain.mineBlock([
-//       Tx.contractCall("timelocked-wallet", "lock", [
-//         types.principal(beneficiary.address),
-//         types.uint(targetBlockHeight),
-//         types.uint(amount),
-//       ], deployer.address),
-//     ]);
+    const beneficiary_original = simnet.getDataVar(
+      "timelocked-wallet",
+      "beneficiary"
+    );
+    expect(beneficiary_original).toBeSome(Cl.principal(beneficiary));
 
-//     // The second lock fails with err-unlock-in-past (err u102).
-//     block.receipts[0].result.expectErr().expectUint(102);
+    const bestowTx = simnet.callPublicFn(
+      "timelocked-wallet",
+      "bestow",
+      [Cl.principal(new_beneficiary)],
+      beneficiary
+    );
+    expect(bestowTx.result).toBeOk(Cl.bool(true));
 
-//     // Assert there are no transfer events.
-//     assertEquals(block.receipts[0].events.length, 0);
-//   },
-// });
+    const beneficiary_updated = simnet.getDataVar(
+      "timelocked-wallet",
+      "beneficiary"
+    );
+    expect(beneficiary_updated).toBeSome(Cl.principal(new_beneficiary));
+  });
+
+  it("does not allow anyone else to bestow the right to claim to someone else", () => {
+    const deployer = accounts.get("deployer")!;
+    const beneficiary = accounts.get("wallet_1")!;
+    const new_beneficiary = accounts.get("wallet_2")!;
+    const another_user = accounts.get("wallet_3")!;
+    const amount = 10;
+
+    const lockTx = simnet.callPublicFn(
+      "timelocked-wallet",
+      "lock",
+      [Cl.principal(beneficiary), Cl.uint(30), Cl.uint(amount)],
+      deployer
+    );
+    expect(lockTx.result).toBeOk(Cl.bool(true));
+
+    const beneficiary_original = simnet.getDataVar(
+      "timelocked-wallet",
+      "beneficiary"
+    );
+    expect(beneficiary_original).toBeSome(Cl.principal(beneficiary));
+
+    const bestowTx_deployer = simnet.callPublicFn(
+      "timelocked-wallet",
+      "bestow",
+      [Cl.principal(new_beneficiary)],
+      deployer
+    );
+    // expecting err-not-beneficiary (err u104)
+    expect(bestowTx_deployer.result).toBeErr(Cl.uint(104));
+
+    const bestowTx_another_user = simnet.callPublicFn(
+      "timelocked-wallet",
+      "bestow",
+      [Cl.principal(new_beneficiary)],
+      another_user
+    );
+    // expecting err-not-beneficiary (err u104)
+    expect(bestowTx_another_user.result).toBeErr(Cl.uint(104));
+
+    const beneficiary_updated = simnet.getDataVar(
+      "timelocked-wallet",
+      "beneficiary"
+    );
+
+    // expecting the beneficiary to be unchanged
+    expect(beneficiary_updated).toBeSome(Cl.principal(beneficiary));
+  });
+});
+
+describe("Test Claim Functionality", () => {
+  it("allows the beneficiary to claim the balance when the block-height is reached", () => {
+    const deployer = accounts.get("deployer")!;
+    const beneficiary = accounts.get("wallet_1")!;
+    const amount = 10;
+    const assets_before_claim = simnet
+      .getAssetsMap()
+      .get("STX")!
+      .get(beneficiary)!;
+    const lockTx = simnet.callPublicFn(
+      "timelocked-wallet",
+      "lock",
+      [Cl.principal(beneficiary), Cl.uint(10), Cl.uint(amount)],
+      deployer
+    );
+    expect(lockTx.result).toBeOk(Cl.bool(true));
+    expect(lockTx.events).toHaveLength(1);
+
+    simnet.mineEmptyBlocks(10);
+
+    const claimTx = simnet.callPublicFn(
+      "timelocked-wallet",
+      "claim",
+      [],
+      beneficiary
+    );
+
+    const assets_after_claim = simnet
+      .getAssetsMap()
+      .get("STX")!
+      .get(beneficiary)!;
+    expect(claimTx.result).toBeOk(Cl.bool(true));
+    expect(claimTx.events).toHaveLength(1);
+    expect(assets_after_claim).toBeGreaterThan(assets_before_claim);
+  });
+
+  it("does not allow the beneficiary to claim the balance before the block-height is reached", () => {
+    const deployer = accounts.get("deployer")!;
+    const beneficiary = accounts.get("wallet_1")!;
+    const amount = 10;
+    const assets_before_claim = simnet
+      .getAssetsMap()
+      .get("STX")!
+      .get(beneficiary)!;
+    const lockTx = simnet.callPublicFn(
+      "timelocked-wallet",
+      "lock",
+      [Cl.principal(beneficiary), Cl.uint(10), Cl.uint(amount)],
+      deployer
+    );
+    expect(lockTx.result).toBeOk(Cl.bool(true));
+    expect(lockTx.events).toHaveLength(1);
+
+    // not enough blocks mined
+    simnet.mineEmptyBlocks(5);
+
+    const claimTx = simnet.callPublicFn(
+      "timelocked-wallet",
+      "claim",
+      [],
+      beneficiary
+    );
+    const assets_after_claim = simnet
+      .getAssetsMap()
+      .get("STX")!
+      .get(beneficiary)!;
+    // expect err-too-soon (err u105)
+    expect(claimTx.result).toBeErr(Cl.uint(105));
+    expect(claimTx.events).toHaveLength(0);
+    expect(assets_after_claim).toEqual(assets_before_claim);
+  });
+
+  it("does not allow anyone else to claim the balance when the block-height is reached", () => {
+    const deployer = accounts.get("deployer")!;
+    const beneficiary = accounts.get("wallet_1")!;
+    const someone_else = accounts.get("wallet_2")!;
+    const amount = 10;
+    const assets_before_claim = simnet
+      .getAssetsMap()
+      .get("STX")!
+      .get(beneficiary)!;
+    const lockTx = simnet.callPublicFn(
+      "timelocked-wallet",
+      "lock",
+      [Cl.principal(beneficiary), Cl.uint(10), Cl.uint(amount)],
+      deployer
+    );
+    expect(lockTx.result).toBeOk(Cl.bool(true));
+    expect(lockTx.events).toHaveLength(1);
+
+    simnet.mineEmptyBlocks(15);
+
+    const claimTx = simnet.callPublicFn(
+      "timelocked-wallet",
+      "claim",
+      [],
+      someone_else
+    );
+    const assets_after_claim = simnet
+      .getAssetsMap()
+      .get("STX")!
+      .get(beneficiary)!;
+    // err-not-beneficiary (err u104)
+    expect(claimTx.result).toBeErr(Cl.uint(104));
+    expect(claimTx.events).toHaveLength(0);
+    expect(assets_after_claim).toEqual(assets_before_claim);
+  });
+});

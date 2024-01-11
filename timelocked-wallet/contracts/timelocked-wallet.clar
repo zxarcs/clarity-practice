@@ -23,7 +23,8 @@
 ;; Conditions:
 ;; Only the contract owner may call lock.
 ;; The wallet cannot be locked twice.
-;; The passed unlock height should be at some point in the future; that is, it has to be larger than the current height.
+;; The passed unlock height should be at some point in the future.
+;; Amount locked must be greater than zero
 (define-public (lock (to-who principal) (unlock-at uint) (amount uint))
     (begin
         (asserts! (is-eq tx-sender owner) err-only-owner)
