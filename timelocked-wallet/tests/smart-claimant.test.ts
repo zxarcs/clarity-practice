@@ -1,5 +1,4 @@
 import { Cl } from "@stacks/transactions";
-import { int } from "@stacks/transactions/dist/cl";
 import { describe, expect, it } from "vitest";
 
 const accounts = simnet.getAccounts();

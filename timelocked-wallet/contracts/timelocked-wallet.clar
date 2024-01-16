@@ -1,7 +1,5 @@
-
 ;; title: timelocked-wallet
 ;; summary: Simple wallet contract that unlocks at specific block height
-;; author: zxarcs
 
 ;; constants
 (define-constant owner tx-sender)

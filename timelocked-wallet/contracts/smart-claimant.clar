@@ -1,7 +1,5 @@
-
 ;; title: smart-claimant
 ;; summary: Can claim from timelocked wallet and disperse funds to multiple principals
-;; author: zxarcs
 
 ;; public functions
 (define-public (claim)
