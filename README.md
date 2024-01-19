@@ -8,7 +8,7 @@
 
 ## Clarity Book, chapter 11
 
-* [NFT marketplace](/tiny-market/contracts/tiny-marke.clar)
+* [NFT marketplace](/tiny-market/contracts/tiny-market.clar)
 
 # Sources
 
